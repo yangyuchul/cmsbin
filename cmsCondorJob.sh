@@ -167,13 +167,13 @@ DoXrdCpPATH=\$3
 echo "### Condor Running \`whoami\`@\`hostname\`:\`pwd\` \${CondorCluster} \${CondorProcess} ###"
 echo ""
 FirstDir=\`pwd\`
-export X509_USER_PROXY=\${FirstDir}/`basename ${proxyFile}`
+#ManualProxy export X509_USER_PROXY=\${FirstDir}/`basename ${proxyFile}`
 echo "### VOMS Proxy \${X509_USER_PROXY} "
-voms-proxy-info
+voms-proxy-info || grid-proxy-info
 echo ""
 echo "### FirstDir=\${FirstDir}"
 mkdir \${FirstDir}/output
-ls -al
+echo "ls -al PWD \$PWD" && ls -al
 echo ""
 tar zxf input.tgz
 ls -al input/
@@ -185,8 +185,8 @@ scramv1 project CMSSW `basename ${CMSSW_VERSION}`
 cd `basename ${CMSSW_VERSION}`
 rm -rf biglib bin cfipython doc external include lib logs objs python src test tmp
 mv ../input/* .
-echo "### \`pwd\` ###"
-ls -al 
+echo "### PWD \`pwd\` ###"
+echo "ls -al \$PWD" && ls -al 
 echo ""
 cd src
 eval \`scramv1 runtime -sh\`
@@ -219,9 +219,19 @@ for a in \${aFile}
 do
 	echo "InFile: \$a"
 done
-echo "### start cmsRun"
-cmsRun condorPset.py print files="\${aFile}" 
-echo "END cmsRun \$?"
+
+tryN=0
+for thisTry in 1 2 3 4 5
+do
+	tryN=\$thisTry
+	echo "### Start cmsRun \${thisTry} "
+cmsRun condorPset.py print files="\${aFile}"
+	JobEnd=\$? 
+	echo "### JobEnd \${JobEnd} cmsRun \${thisTry}"
+	if [ "\${JobEnd}" == "0" ]; then break; fi
+done
+echo "### END Final cmsRun JobEnd \${JobEnd} TryNumber \${tryN}"
+
 
 echo ""
 echo "### Copying to SE"
@@ -234,6 +244,8 @@ do
 	bRootFile="\${bRootFile}_\${CondorCluster}_\${CondorProcess}_\${RANDOM}.root"
 	mv \${rootFile} \${FirstDir}/output/\${bRootFile}
 done
+echo "ls -al \${FirstDir}/output"
+ls -al \${FirstDir}/output
 
 if [ "\${DoXrdCpPATH}" != "NULL" ]; then
 	rootFiles=\`find \${FirstDir}/output -maxdepth 1 -name "*.root"\`
@@ -242,22 +254,22 @@ if [ "\${DoXrdCpPATH}" != "NULL" ]; then
 		bRootFile=\`basename \${rootFile}\`
 		echo "xrdcp \${rootFile} \${DoXrdCpPATH}/\${bRootFile}"
 		xrdcp \${rootFile} \${DoXrdCpPATH}/\${bRootFile}
+		echo "END Copy \$?"
 	done
 fi
 
-echo "END Copy \$?"
-
 cd \${FirstDir}
-
 
 echo "Done CondorRun \$CondorCluster \$CondorProcess"
 ls -al 
 echo "Bye Bye !!! "
 EOF
 
-AddLINE="export XRD_TRANSACTIONTIMEOUT=80"
+#if [ "`hostname | grep sdfarm | wc -l`" == "1" ]; then
+	AddLINE="export XRD_TRANSACTIONTIMEOUT=80"
+	sed -i "s/^cmsRun/${AddLINE}\ncmsRun/" ${dir}/condor.sh
+#fi
 
-sed -i "s/^cmsRun/${AddLINE}\ncmsRun/" ${dir}/condor.sh
 chmod +x ${dir}/condor.sh
 
 
@@ -265,16 +277,18 @@ total=`cat $dir/dataset.list | wc -l`
 total=`expr $total + $MaxNFiles - 1`
 nJob=`expr $total / $MaxNFiles`
 mkdir ${dir}/log
-cp $proxyFile ${dir}/
+#ManualProxy cp $proxyFile ${dir}/
 cat << EOF > ${dir}/job.jdl
 executable = ${dir}/condor.sh
 universe = vanilla
 output   = log/outCondor_\$(Cluster).\$(Process).stdout
 error    = log/outCondor_\$(Cluster).\$(Process).stdout
 log      = /dev/null
+use_x509userproxy = True
 should_transfer_files = yes
 initialdir = ${dir}
-transfer_input_files = dataset.list, input.tgz, condorPset.py, `basename ${proxyFile}`
+#ManualProxy transfer_input_files = dataset.list, input.tgz, condorPset.py, `basename ${proxyFile}`
+transfer_input_files = dataset.list, input.tgz, condorPset.py
 EOF
 if [ "${ReturnOutput}" == "1" ]; then
 	echo "when_to_transfer_output = ON_EXIT" >> ${dir}/job.jdl

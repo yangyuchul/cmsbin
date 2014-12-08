@@ -67,19 +67,38 @@ do
 	fi 
 done
 
+myTempDir=/tmp/${USER}_DAS
+if [ ! -d $myTempDir ]; then
+	mkdir -p $myTempDir
+fi
+
 for dataset in $Datasets
 do
+	dasString=`dirString $dataset`
 	if [ "${dataset:(-4)}" == "USER" ]; then instance="instance=prod/phys03"; fi
-	tempFile="/tmp/cmsDAS_dataset_`date +"%y%m%d_%H%M%S"`_${RANDOM}"
-	listFile=${tempFile/dataset_/datalist}
-	das_client.py --query="file dataset=${dataset} ${instance} | grep file.name, file.nevents, file.size" --limit=0 >& $tempFile
-
-	sites=`das_client.py --query="site dataset=${dataset} ${instance}" --limit=0`
+	#tempFile="/tmp/cmsDAS_dataset_`date +"%y%m%d_%H%M%S"`_${RANDOM}"
+	tempFile="$myTempDir/cmsDAS_${dasString}.das"
+	tempSiteFile="$myTempDir/cmsDAS_${dasString}.site"
+	listFile=${tempFile/cmsDAS_/cmsDASList_}
+	rm -rf $listFile
+	if [ ! -f $tempFile ]; then
+		echo "Searching... DAS"
+		das_client.py --query="file dataset=${dataset} ${instance} | grep file.name, file.nevents, file.size" --limit=0 >& $tempFile
+	else 
+		ls $tempFile
+	fi
+	if  [ ! -f $tempSiteFile ] ; then
+		echo "Searching ... Sites"
+		das_client.py --query="site dataset=${dataset} ${instance}" --limit=0 >& $tempSiteFile
+	else 
+		ls $tempSiteFile
+	fi
+	sites=`cat $tempSiteFile`
 	sites=${sites//'N/A'/}
 	sitesStr=""
 	for site in $sites
 	do
-		sitesStr="${siteStr} ${site}"
+		sitesStr="${sitesStr} ${site}"
 	done
 	URL=""
 	for site in $sites
@@ -102,9 +121,8 @@ do
 	totalevent=0
 	for event in `cat $tempFile | awk '{print $2}'`
 	do
-		totalevent=`python -c "print $totalevent + $event"`
+		totalevent=`expr $totalevent + $event`
 	done
-
 
 	totalsize=0
 	for size in `cat $tempFile | awk '{print $3}'`
@@ -114,6 +132,7 @@ do
 		totalsize=`python -c "print $totalsize + $size"`
 	done
 	totalsize=`python -c "print $totalsize / 1024.0 / 1024.0 / 1024.0"`
+	bc <<< 'scale=5;$totalsize/1024.0/1024.0/1024.0'
 
 	thisSummary=`echo -n "INFO $numFile files $totalevent events $totalsize GB $dataset $sitesStr"`
 
@@ -129,9 +148,6 @@ do
 	if [ "${OptSmall}" == "1" ]; then  echo "$smallFile $smallNEvt $smallSize"; fi
 	if [ "${OptCFG}" == "1" ]; then  printCFG $listFile `dirString $dataset`.root; fi
 	if [ "${OptAll}" == "1" ];       then            
-		echo "### Summary"
-		echo $thisSummary
-		echo ""
 		echo "### Files"
 		cat $tempFile
 		echo ""
@@ -141,11 +157,14 @@ do
 		echo "### Smallest File"
 		echo "$smallFile $smallNEvt $smallSize"
 		echo ""
-		echo "### CFG Argumetns"
-		printCFG $listFile `dirString $dataset`.root
+		#echo "### CFG Argumetns"
+		#printCFG $listFile `dirString $dataset`.root
+		echo "### Summary"
+		echo $thisSummary
+		echo ""
 	fi
 
-	rm -rf ${tempFile}
+#	rm -rf ${tempFile}
 	rm -rf ${listFile}
 done
 

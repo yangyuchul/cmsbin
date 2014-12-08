@@ -67,7 +67,7 @@ do
 	fi 
 done
 
-myTempDir=/tmp/${USER}_DAS
+myTempDir=$HOME/.cmsDAS
 if [ ! -d $myTempDir ]; then
 	mkdir -p $myTempDir
 fi
